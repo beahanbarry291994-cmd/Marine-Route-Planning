@@ -11,6 +11,8 @@
 
 A complete pipeline for autonomous ship route planning: from satellite chart acquisition and obstacle segmentation to shortest-path search, trajectory smoothing, and ship dynamics simulation with environmental disturbances.
 
+<img src="output/result_ship.png" width="95%" alt="Marine Route Planning Result"/>
+
 </div>
 
 ---
