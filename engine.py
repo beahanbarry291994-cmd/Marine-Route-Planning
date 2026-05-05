@@ -34,6 +34,25 @@ def num2deg(x, y, z):
             x / n * 360 - 180)
 
 
+# ──────────────────────── PyInstaller 安全 SSL ────────────────────────
+
+def _create_pyinstaller_safe_ssl_context():
+    """创建 PyInstaller exe 兼容的 SSL context。
+    ssl.create_default_context() 在打包后的 exe 中因为 CA 证书路径错误会卡死，
+    因此优先使用未验证模式，其次尝试 certifi。
+    """
+    try:
+        return ssl._create_unverified_context()
+    except Exception:
+        pass
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        pass
+    return ssl.create_default_context()
+
+
 # ──────────────────────── 地图下载 ────────────────────────
 
 def fetch_map(start_lonlat, goal_lonlat, zoom):
@@ -57,9 +76,7 @@ def fetch_map(start_lonlat, goal_lonlat, zoom):
     tl = (num2deg(x0, y0, zoom)[1], num2deg(x0, y0, zoom)[0])
     br = (num2deg(x1 + 1, y1 + 1, zoom)[1], num2deg(x1 + 1, y1 + 1, zoom)[0])
 
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
+    ctx = _create_pyinstaller_safe_ssl_context()
     base = "https://basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}.png"
     gray_tile = np.full((256, 256, 3), 170, dtype=np.uint8)
 
