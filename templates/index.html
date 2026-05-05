@@ -1,0 +1,1200 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Marine Route Planning</title>
+<script src="/static/plotly-2.35.2.min.js?v={{ cache_buster }}"></script>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<!-- ═══════════════ LOADING OVERLAY ═══════════════ -->
+<div class="spinner-overlay" id="spinner-overlay">
+  <div class="spinner-box">
+    <div class="spinner"></div>
+    <span data-i18n="processing">Processing... please wait</span>
+  </div>
+</div>
+
+<!-- ═══════════════ APP SHELL ═══════════════ -->
+<div class="app-shell">
+
+  <!-- ── Top Bar ── -->
+  <header class="top-bar">
+    <input class="task-name" data-i18n-placeholder="task_name" placeholder="Unnamed Task" id="task-name">
+    <span class="status-badge ready" id="status-badge">
+      <span class="dot"></span><span data-i18n="ready">Ready</span>
+    </span>
+    <div class="top-metrics" id="top-metrics">
+      <span class="top-metric"><span data-i18n="distance">Distance</span>: <span class="val" id="mt-dist">--</span></span>
+      <span class="top-metric"><span data-i18n="time">Time</span>: <span class="val" id="mt-time">--</span></span>
+      <span class="top-metric"><span data-i18n="completion">WP</span>: <span class="val" id="mt-wp">--</span></span>
+    </div>
+    <button class="export-btn" id="export-btn" data-i18n="export_report" onclick="exportReport()">Export Report</button>
+    <button class="lang-toggle" id="lang-toggle">EN</button>
+  </header>
+
+  <!-- ── Sidebar ── -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">Marine Route Planning <span class="ver">v2.0</span></div>
+
+    <!-- 1. Ship Selection -->
+    <div class="param-group" id="pg-ship">
+      <div class="param-group-header" onclick="toggleParamGroup(this)">
+        <span data-i18n="ship_selection">Ship Selection</span>
+        <span style="display:flex;align-items:center;gap:8px">
+          <button class="reset-btn" data-i18n-title="reset_default" title="Reset Defaults" onclick="event.stopPropagation();resetShipDefaults()">↺</button>
+          <span class="arrow">▼</span>
+        </span>
+      </div>
+      <div class="param-group-body">
+        <div class="param-row-full">
+          <label data-i18n="ship_preset">Ship Preset</label>
+          <select id="ship-preset" onchange="applyShipPreset()">
+            <option value="bulk" data-i18n="ship_bulk">Bulk Carrier</option>
+            <option value="tanker" data-i18n="ship_tanker">Oil Tanker</option>
+            <option value="container" data-i18n="ship_container">Container Ship</option>
+            <option value="passenger" data-i18n="ship_passenger">Passenger Ship</option>
+            <option value="tug" data-i18n="ship_tug">Tug Boat</option>
+            <option value="custom" data-i18n="ship_custom">Custom</option>
+          </select>
+        </div>
+        <div class="param-row"><label data-i18n="ship_l">Length (m)</label><input type="number" id="ship_l" step="1" value="160"></div>
+        <div class="param-row"><label data-i18n="ship_b">Beam (m)</label><input type="number" id="ship_b" step="1" value="21"></div>
+        <div class="param-row"><label data-i18n="ship_draft">Draft (m)</label><input type="number" id="ship_draft" step="0.5" value="10"></div>
+        <div class="param-row"><label>K</label><input type="number" id="ship_k" step="0.05" value="0.5"></div>
+        <div class="param-row"><label>T</label><input type="number" id="ship_t" step="0.05" value="1.0"></div>
+        <div class="param-row"><label>a</label><input type="number" id="ship_a" step="0.05" value="0.4"></div>
+        <div class="param-row"><label data-i18n="speed_kn">Speed (kn)</label>
+          <input type="range" id="ship_speed_kn_range" min="2" max="30" value="10" oninput="syncRangeNum('ship_speed_kn_range','ship_speed_kn')">
+          <input type="number" id="ship_speed_kn" step="0.5" value="10" style="max-width:60px" onchange="syncRangeNum('ship_speed_kn','ship_speed_kn_range')">
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. Route Coordinates -->
+    <div class="param-group" id="pg-route">
+      <div class="param-group-header" onclick="toggleParamGroup(this)">
+        <span data-i18n="route_settings">Route Settings</span>
+        <span class="arrow">▼</span>
+      </div>
+      <div class="param-group-body">
+        <div class="click-mode-toggle">
+          <button id="cm-start" class="active" onclick="setClickMode('start')" data-i18n="pick_start">Pick Start</button>
+          <button id="cm-goal" onclick="setClickMode('goal')" data-i18n="pick_goal">Pick Goal</button>
+        </div>
+        <div class="param-row"><label data-i18n="start_lon">Start Lon</label><input type="number" id="start_lon" step="0.001" value="122.295"></div>
+        <div class="param-row"><label data-i18n="start_lat">Start Lat</label><input type="number" id="start_lat" step="0.001" value="29.848"></div>
+        <div class="param-row"><label data-i18n="goal_lon">Goal Lon</label><input type="number" id="goal_lon" step="0.001" value="122.387"></div>
+        <div class="param-row"><label data-i18n="goal_lat">Goal Lat</label><input type="number" id="goal_lat" step="0.001" value="29.9795"></div>
+        <div class="param-row"><label data-i18n="zoom">Zoom</label>
+          <input type="range" id="zoom_range" min="10" max="16" value="13" oninput="syncRangeNum('zoom_range','zoom')">
+          <input type="number" id="zoom" min="10" max="16" value="13" style="max-width:50px">
+        </div>
+        <div class="param-row"><label data-i18n="safety_px">Safety (px)</label><input type="number" id="safety_px" min="1" max="10" value="3"></div>
+        <button class="btn-mini" style="width:100%;margin-top:4px" onclick="swapStartGoal()" data-i18n="swap_se">Swap Start/Goal</button>
+      </div>
+    </div>
+
+    <!-- 3. Environment -->
+    <div class="param-group" id="pg-env">
+      <div class="param-group-header" onclick="toggleParamGroup(this)">
+        <span data-i18n="environment_conditions">Environment Conditions</span>
+        <span class="arrow">▼</span>
+      </div>
+      <div class="param-group-body">
+        <div class="param-row-full">
+          <label data-i18n="env_preset">Environment Preset</label>
+          <select id="env-preset" onchange="applyEnvPreset()">
+            <option value="calm" data-i18n="env_calm">Calm (No wind/current)</option>
+            <option value="light" data-i18n="env_light">Light Breeze</option>
+            <option value="moderate" data-i18n="env_moderate" selected>Moderate Sea</option>
+            <option value="heavy" data-i18n="env_heavy">Heavy Sea</option>
+            <option value="custom" data-i18n="custom">Custom</option>
+          </select>
+        </div>
+        <div class="param-row"><label data-i18n="v_wind">Wind (m/s)</label><input type="number" id="v_wind" step="0.5" value="5.0"></div>
+        <div class="param-row"><label data-i18n="psi_wind">Wind Dir (deg)</label><input type="number" id="psi_wind_deg" step="5" value="45"></div>
+        <div class="param-row"><label data-i18n="v_current">Current (m/s)</label><input type="number" id="v_current" step="0.1" value="0.5"></div>
+        <div class="param-row"><label data-i18n="psi_current">Current Dir (deg)</label><input type="number" id="psi_current_deg" step="5" value="0"></div>
+        <div class="param-row"><label data-i18n="wave_h">Wave H (m)</label><input type="number" id="wave_h" step="0.5" value="2.0"></div>
+        <div class="param-row"><label data-i18n="wave_t">Wave T (s)</label><input type="number" id="wave_t" step="0.5" value="8.0"></div>
+        <div class="param-row"><label data-i18n="wave_dir">Wave Dir (deg)</label><input type="number" id="wave_dir" step="5" value="45"></div>
+        <div class="param-row"><label data-i18n="min_depth">Min Depth (m)</label><input type="number" id="min_depth" step="1" value="5.0"></div>
+      </div>
+    </div>
+
+    <!-- 4. Simulation Parameters -->
+    <div class="param-group" id="pg-sim">
+      <div class="param-group-header" onclick="toggleParamGroup(this)">
+        <span data-i18n="simulation_params">Simulation Parameters</span>
+        <span class="arrow">▼</span>
+      </div>
+      <div class="param-group-body">
+        <div class="param-row-full">
+          <label data-i18n="pid_preset">Controller Preset</label>
+          <select id="pid-preset" onchange="applyPidPreset()">
+            <option value="balanced" data-i18n="pid_balanced">Balanced</option>
+            <option value="conservative" data-i18n="pid_conservative">Conservative</option>
+            <option value="aggressive" data-i18n="pid_aggressive">Aggressive</option>
+            <option value="custom" data-i18n="custom">Custom</option>
+          </select>
+        </div>
+        <div class="param-row"><label>KP</label><input type="number" id="pid_kp" step="0.1" value="1.0"></div>
+        <div class="param-row"><label>KI</label><input type="number" id="pid_ki" step="0.001" value="0.01"></div>
+        <div class="param-row"><label>KD</label><input type="number" id="pid_kd" step="0.1" value="5.0"></div>
+        <div class="param-row"><label data-i18n="wp_interval">WP Interval (m)</label><input type="number" id="wp_interval_m" step="50" value="500"></div>
+        <div class="param-row"><label data-i18n="wp_switch">WP Switch (m)</label><input type="number" id="wp_switch_m" step="50" value="200"></div>
+        <div class="param-row"><label data-i18n="max_rudder">Max Rudder (deg)</label><input type="number" id="max_rudder_deg" step="1" value="35"></div>
+      </div>
+    </div>
+
+    <!-- 5. Advanced Settings (collapsed by default) -->
+    <div class="param-group collapsed" id="pg-adv">
+      <div class="param-group-header" onclick="toggleParamGroup(this)">
+        <span data-i18n="advanced_settings">Advanced Settings</span>
+        <span class="arrow">▼</span>
+      </div>
+      <div class="param-group-body">
+        <div class="param-row-full">
+          <label data-i18n="map_source">Map Source</label>
+          <select id="map-source">
+            <option value="satellite" data-i18n="map_sat">Satellite</option>
+          </select>
+        </div>
+        <div class="param-row-full">
+          <label data-i18n="coord_system">Coordinate System</label>
+          <select id="coord-system"><option>WGS-84</option><option>GCJ-02</option></select>
+        </div>
+        <div class="param-row-full">
+          <label data-i18n="unit_system">Unit System</label>
+          <select id="unit-system">
+            <option value="nm" data-i18n="unit_nm">Nautical Miles / kn</option>
+            <option value="km" data-i18n="unit_km">Kilometers / m/s</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="run-area">
+      <button class="btn-run" id="btn-run" onclick="runSimulation()" data-i18n="run_simulation">Run Simulation</button>
+      <div class="run-status" id="run-status"></div>
+    </div>
+  </aside>
+
+  <!-- ── Main Area ── -->
+  <main class="main-area" id="main-area">
+    <div class="tab-bar" id="main-tab-bar">
+      <button class="tab-btn active" data-view="route" onclick="switchMainTab('route')" data-i18n="route_overview">Route Overview</button>
+      <button class="tab-btn" data-view="motion" onclick="switchMainTab('motion')" data-i18n="motion_curves">Motion Curves</button>
+      <button class="tab-btn" data-view="grid" onclick="switchMainTab('grid')" data-i18n="grid_map">Grid Map</button>
+      <button class="tab-btn" data-view="summary" onclick="switchMainTab('summary')" data-i18n="data_summary">Summary</button>
+    </div>
+    <div class="view-container" id="view-container">
+      <div class="view-panel active" id="vp-route"><div class="plot-area" id="plot-route"></div></div>
+      <div class="view-panel" id="vp-motion"><div class="plot-area" id="plot-motion"></div></div>
+      <div class="view-panel" id="vp-grid"><div class="plot-area" id="plot-grid"></div></div>
+      <div class="view-panel" id="vp-summary"><div class="summary-grid" id="summary-cards"></div></div>
+    </div>
+  </main>
+
+  <!-- ── Bottom Panel ── -->
+  <div class="bottom-panel-shell" id="bottom-panel">
+    <div class="resize-handle" id="resize-handle" title="Drag to resize"></div>
+    <div class="bottom-tab-bar" id="bottom-tab-bar"></div>
+    <div class="bottom-content" id="bottom-content"></div>
+  </div>
+</div>
+
+<!-- ═══════════════ SCRIPTS ═══════════════ -->
+<script>
+// ══════════════════════════════════════════════════════════════
+// 1. i18n SYSTEM
+// ══════════════════════════════════════════════════════════════
+const i18nDict = {
+  zh: {
+    task_name: '未命名任务', ready: '就绪', running: '运行中', done: '完成', error: '失败',
+    distance: '距离', time: '用时', completion: '路点', export_report: '导出报告',
+    ship_selection: '船舶选择', reset_default: '恢复默认',
+    ship_preset: '船型预设', ship_bulk: '散货船', ship_tanker: '油轮', ship_container: '集装箱船',
+    ship_passenger: '客船', ship_tug: '拖船', ship_custom: '自定义',
+    ship_l: '船长 (m)', ship_b: '船宽 (m)', ship_draft: '吃水 (m)', speed_kn: '航速 (kn)',
+    route_settings: '航线设定', pick_start: '点击设起点', pick_goal: '点击设终点',
+    start_lon: '起点经度', start_lat: '起点纬度', goal_lon: '终点经度', goal_lat: '终点纬度',
+    zoom: '缩放级别', safety_px: '安全距离 (px)', swap_se: '交换起终点',
+    environment_conditions: '环境条件', env_preset: '环境预设',
+    env_calm: '无风无流', env_light: '微风轻浪', env_moderate: '中等海况', env_heavy: '恶劣海况',
+    custom: '自定义', v_wind: '风速 (m/s)', psi_wind: '风向 (deg)',
+    v_current: '流速 (m/s)', psi_current: '流向 (deg)',
+    wave_h: '波高 (m)', wave_t: '波周期 (s)', wave_dir: '波向 (deg)', min_depth: '最小水深 (m)',
+    simulation_params: '仿真参数', pid_preset: '控制器预设',
+    pid_balanced: '平衡型', pid_conservative: '保守型', pid_aggressive: '激进型',
+    wp_interval: '航路点间隔 (m)', wp_switch: '切换距离 (m)', max_rudder: '最大舵角 (deg)',
+    advanced_settings: '高级设置', map_source: '地图源', map_sat: '卫星图',
+    coord_system: '坐标系', unit_system: '单位制',
+    unit_nm: '海里 / 节', unit_km: '公里 / 米每秒',
+    run_simulation: '开始仿真', processing: '正在计算，请稍候...',
+    route_overview: '路线概览', motion_curves: '运动曲线', grid_map: '栅格地图',
+    data_summary: '数据摘要', trajectory_replay: '轨迹回放',
+    expand: '放大', collapse: '收起',
+    route_distance: '航线距离', sim_time: '仿真时间', wp_reached: '航路点达成',
+    endpoint_offset: '终点偏移', rudder_range: '舵角范围', max_heading_err: '最大航向误差',
+    path_km: 'km', path_s: 's', path_m: 'm', path_deg: 'deg',
+    a_star_path: 'A* 路径', kt_trajectory: 'KT 轨迹', waypoints: '航路点',
+    start: '起点', goal: '终点', sim_end: '仿真终点',
+    rudder_deg: '舵角 (deg)', heading_deg: '航向 (deg)', speed_kn_label: '航速 (kn)',
+    drift_deg: '漂角 (deg)', desired_heading: '期望航向',
+    grid_title: '栅格地图 (白=水域 黑=陆地)',
+    heading_err: '航向误差',
+  },
+  en: {
+    task_name: 'Unnamed Task', ready: 'Ready', running: 'Running', done: 'Done', error: 'Error',
+    distance: 'Distance', time: 'Time', completion: 'WP', export_report: 'Export Report',
+    ship_selection: 'Ship Selection', reset_default: 'Reset Defaults',
+    ship_preset: 'Ship Preset', ship_bulk: 'Bulk Carrier', ship_tanker: 'Oil Tanker',
+    ship_container: 'Container Ship', ship_passenger: 'Passenger Ship', ship_tug: 'Tug Boat',
+    ship_custom: 'Custom',
+    ship_l: 'Length (m)', ship_b: 'Beam (m)', ship_draft: 'Draft (m)', speed_kn: 'Speed (kn)',
+    route_settings: 'Route Settings', pick_start: 'Pick Start', pick_goal: 'Pick Goal',
+    start_lon: 'Start Lon', start_lat: 'Start Lat', goal_lon: 'Goal Lon', goal_lat: 'Goal Lat',
+    zoom: 'Zoom Level', safety_px: 'Safety (px)', swap_se: 'Swap Start/Goal',
+    environment_conditions: 'Environment', env_preset: 'Preset',
+    env_calm: 'No Wind/Current', env_light: 'Light Breeze', env_moderate: 'Moderate Sea',
+    env_heavy: 'Heavy Sea', custom: 'Custom',
+    v_wind: 'Wind (m/s)', psi_wind: 'Wind Dir (deg)',
+    v_current: 'Current (m/s)', psi_current: 'Current Dir (deg)',
+    wave_h: 'Wave H (m)', wave_t: 'Wave T (s)', wave_dir: 'Wave Dir (deg)',
+    min_depth: 'Min Depth (m)',
+    simulation_params: 'Simulation', pid_preset: 'Controller',
+    pid_balanced: 'Balanced', pid_conservative: 'Conservative', pid_aggressive: 'Aggressive',
+    wp_interval: 'WP Interval (m)', wp_switch: 'WP Switch (m)', max_rudder: 'Max Rudder (deg)',
+    advanced_settings: 'Advanced', map_source: 'Map Source', map_sat: 'Satellite',
+    coord_system: 'Coordinate', unit_system: 'Units',
+    unit_nm: 'NM / kn', unit_km: 'km / m/s',
+    run_simulation: 'Run Simulation', processing: 'Processing...',
+    route_overview: 'Route Overview', motion_curves: 'Motion Curves', grid_map: 'Grid Map',
+    data_summary: 'Summary', trajectory_replay: 'Replay',
+    expand: 'Expand', collapse: 'Collapse',
+    route_distance: 'Route Distance', sim_time: 'Simulation Time', wp_reached: 'Waypoints',
+    endpoint_offset: 'Endpoint Offset', rudder_range: 'Rudder Range', max_heading_err: 'Max Heading Error',
+    path_km: 'km', path_s: 's', path_m: 'm', path_deg: 'deg',
+    a_star_path: 'A* Path', kt_trajectory: 'KT Trajectory', waypoints: 'Waypoints',
+    start: 'Start', goal: 'Goal', sim_end: 'Sim End',
+    rudder_deg: 'Rudder (deg)', heading_deg: 'Heading (deg)', speed_kn_label: 'Speed (kn)',
+    drift_deg: 'Drift (deg)', desired_heading: 'Desired Heading',
+    grid_title: 'Grid Map (white=water, black=land)',
+    heading_err: 'Heading Error',
+  }
+};
+
+let currentLang = localStorage.getItem('lang') || 'zh';
+function t(key) { return (i18nDict[currentLang] || i18nDict.en)[key] || key; }
+
+function applyI18n() {
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    el.textContent = t(el.getAttribute('data-i18n'));
+  });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+    el.placeholder = t(el.getAttribute('data-i18n-placeholder'));
+  });
+  document.querySelectorAll('[data-i18n-title]').forEach(el => {
+    el.title = t(el.getAttribute('data-i18n-title'));
+  });
+  document.documentElement.lang = currentLang === 'zh' ? 'zh-CN' : 'en';
+  document.getElementById('lang-toggle').textContent = currentLang === 'zh' ? 'EN' : '中文';
+  // Refresh status badge text
+  updateStatusBadge();
+}
+
+function toggleLanguage() {
+  currentLang = currentLang === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('lang', currentLang);
+  applyI18n();
+  if (window._simData) {
+    // Re-render all views to update chart titles/labels
+    plotRouteOverview(window._simData);
+    plotMotionParams(window._simData);
+    plotGridMap(window._simData);
+    renderSummary(window._simData);
+    renderBottomPanel(window._simData);
+  }
+}
+
+document.getElementById('lang-toggle').addEventListener('click', toggleLanguage);
+
+// ══════════════════════════════════════════════════════════════
+// 2. SHIP / ENV / PID PRESETS
+// ══════════════════════════════════════════════════════════════
+const shipPresets = {
+  bulk:     {k:0.50, t:1.0, a:0.4, l:200, b:32, draft:12, speed:13},
+  tanker:   {k:0.40, t:1.2, a:0.35, l:250, b:40, draft:15, speed:12},
+  container:{k:0.60, t:0.8, a:0.45, l:300, b:42, draft:13, speed:20},
+  passenger:{k:0.65, t:0.7, a:0.5, l:280, b:35, draft:8, speed:22},
+  tug:      {k:0.80, t:0.4, a:0.6, l:35, b:12, draft:5, speed:10},
+};
+
+const envPresets = {
+  calm:    {v_wind:0, psi_wind:0, v_current:0, psi_current:0, wave_h:0, wave_t:0, wave_dir:0},
+  light:   {v_wind:3, psi_wind:30, v_current:0.3, psi_current:0, wave_h:1, wave_t:5, wave_dir:30},
+  moderate:{v_wind:5, psi_wind:45, v_current:0.5, psi_current:0, wave_h:2, wave_t:8, wave_dir:45},
+  heavy:   {v_wind:12, psi_wind:60, v_current:1.5, psi_current:30, wave_h:5, wave_t:12, wave_dir:60},
+};
+
+const pidPresets = {
+  conservative: {kp:0.5, ki:0.005, kd:2.0},
+  balanced:     {kp:1.0, ki:0.01, kd:5.0},
+  aggressive:   {kp:2.0, ki:0.02, kd:10.0},
+};
+
+function applyShipPreset() {
+  const key = document.getElementById('ship-preset').value;
+  if (key === 'custom') return;
+  const p = shipPresets[key];
+  setVal('ship_k', p.k); setVal('ship_t', p.t); setVal('ship_a', p.a);
+  setVal('ship_l', p.l); setVal('ship_b', p.b); setVal('ship_draft', p.draft);
+  setVal('ship_speed_kn', p.speed);
+  setVal('ship_speed_kn_range', p.speed);
+}
+function resetShipDefaults() {
+  document.getElementById('ship-preset').value = 'bulk';
+  applyShipPreset();
+}
+function applyEnvPreset() {
+  const key = document.getElementById('env-preset').value;
+  if (key === 'custom') return;
+  const p = envPresets[key];
+  for (const [k,v] of Object.entries(p)) setVal(k, v);
+}
+function applyPidPreset() {
+  const key = document.getElementById('pid-preset').value;
+  if (key === 'custom') return;
+  const p = pidPresets[key];
+  setVal('pid_kp', p.kp); setVal('pid_ki', p.ki); setVal('pid_kd', p.kd);
+}
+
+function setVal(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.value = val;
+}
+function syncRangeNum(srcId, dstId) {
+  document.getElementById(dstId).value = document.getElementById(srcId).value;
+}
+
+// ══════════════════════════════════════════════════════════════
+// 3. UI HELPERS
+// ══════════════════════════════════════════════════════════════
+function toggleParamGroup(header) {
+  header.parentElement.classList.toggle('collapsed');
+}
+
+function updateStatusBadge() {
+  window._statusBadgeText = window._statusBadgeText || 'ready';
+  const badge = document.getElementById('status-badge');
+  badge.className = 'status-badge ' + window._statusBadgeText;
+  badge.querySelector('span:last-child').textContent = t(window._statusBadgeText);
+}
+
+function setStatus(s) {
+  window._statusBadgeText = s;
+  updateStatusBadge();
+}
+
+// ══════════════════════════════════════════════════════════════
+// 4. MAIN TAB MANAGEMENT
+// ══════════════════════════════════════════════════════════════
+const allViewKeys = ['route', 'motion', 'grid', 'summary'];
+let mainViewKey = 'route';
+
+function switchMainTab(key) {
+  mainViewKey = key;
+  // Update tab buttons
+  document.querySelectorAll('#main-tab-bar .tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.view === key);
+  });
+  // Update view panels
+  document.querySelectorAll('.view-panel').forEach(vp => {
+    vp.classList.toggle('active', vp.id === 'vp-' + key);
+  });
+  // Resize Plotly chart
+  setTimeout(() => window.dispatchEvent(new Event('resize')), 100);
+  // Update bottom panel
+  if (window._simData) renderBottomPanel(window._simData);
+}
+
+function swapWithMain(key) {
+  if (key === mainViewKey) return;
+  switchMainTab(key);
+}
+
+// ══════════════════════════════════════════════════════════════
+// 5. RUN SIMULATION
+// ══════════════════════════════════════════════════════════════
+function getParams() {
+  const p = {};
+  const fields = ['start_lon','start_lat','goal_lon','goal_lat','zoom','safety_px',
+    'ship_k','ship_t','ship_a','ship_speed_kn','max_rudder_deg',
+    'pid_kp','pid_ki','pid_kd','v_wind','psi_wind_deg','v_current','psi_current_deg',
+    'wp_interval_m','wp_switch_m','ship_l','ship_b','ship_draft',
+    'wave_h','wave_t','wave_dir','min_depth'];
+  fields.forEach(id => { p[id] = parseFloat(document.getElementById(id).value) || 0; });
+  p.sim_dt = 0.1;
+  return p;
+}
+
+async function runSimulation() {
+  const btn = document.getElementById('btn-run');
+  const status = document.getElementById('run-status');
+  const spinner = document.getElementById('spinner-overlay');
+  btn.disabled = true; btn.textContent = '...';
+  spinner.classList.add('show');
+  status.textContent = ''; status.className = 'run-status loading';
+  status.textContent = t('processing');
+  setStatus('running');
+
+  try {
+    const resp = await fetch('/api/simulate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(getParams()),
+    });
+    const data = await resp.json();
+
+    if (data.status === 'error') {
+      status.textContent = 'Error: ' + data.message;
+      status.className = 'run-status error';
+      setStatus('error');
+      return;
+    }
+
+    window._simData = data;
+    setStatus('done');
+
+    // Update top metrics
+    const m = data.metrics;
+    document.getElementById('mt-dist').textContent = m.path_length_km.toFixed(1) + ' km';
+    document.getElementById('mt-time').textContent = m.sim_time_s.toFixed(0) + ' s';
+    document.getElementById('mt-wp').textContent = m.wp_reached + '/' + m.wp_total;
+    window._lastParams = getParams();
+    document.getElementById('export-btn').classList.add('visible');
+
+    status.textContent = '✓ ' + t('done') + ' — ' + m.path_length_km.toFixed(1) + ' km, ' + m.sim_time_s.toFixed(0) + ' s';
+    status.className = 'run-status success';
+
+    plotRouteOverview(data);
+    plotMotionParams(data);
+    plotGridMap(data);
+    renderSummary(data);
+    renderBottomPanel(data);
+
+  } catch (err) {
+    status.textContent = 'Error: ' + err.message;
+    status.className = 'run-status error';
+    setStatus('error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = t('run_simulation');
+    spinner.classList.remove('show');
+  }
+}
+
+function exportReport() {
+  const data = window._simData;
+  if (!data) return;
+  const m = data.metrics;
+  const report = {
+    task: document.getElementById('task-name').value || t('task_name'),
+    timestamp: new Date().toISOString(),
+    parameters: window._lastParams || getParams(),
+    metrics: {
+      distance_km: m.path_length_km,
+      time_s: m.sim_time_s,
+      waypoints: m.wp_reached + '/' + m.wp_total,
+      endpoint_offset_m: m.end_offset_m,
+      rudder_range_deg: m.rudder_range,
+      max_heading_error_deg: m.max_heading_error,
+    },
+  };
+  const blob = new Blob([JSON.stringify(report, null, 2)], {type: 'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'route_report_' + Date.now() + '.json';
+  a.click(); URL.revokeObjectURL(url);
+}
+
+// ══════════════════════════════════════════════════════════════
+// 6. PLOT: ROUTE OVERVIEW
+// ══════════════════════════════════════════════════════════════
+function plotRouteOverview(data) {
+  const W = data.grid_w, H = data.grid_h;
+  const traces = [
+    {type:'image', source:'data:image/png;base64,'+data.map_image_b64,
+     x0:0, y0:0, dx:1, dy:1, sizex:W, sizey:H, hoverinfo:'none'},
+    {type:'scatter', mode:'lines',
+     x:data.path_pixels.map(p=>p[0]), y:data.path_pixels.map(p=>p[1]),
+     line:{width:2, color:'#FFD700', dash:'dash'}, name:t('a_star_path'), opacity:0.7},
+    {type:'scatter', mode:'lines',
+     x:data.kt_trajectory.map(p=>p[0]), y:data.kt_trajectory.map(p=>p[1]),
+     line:{width:3, color:'#0066FF'}, name:t('kt_trajectory')},
+    {type:'scatter', mode:'markers',
+     x:data.waypoints.map(p=>p[0]), y:data.waypoints.map(p=>p[1]),
+     marker:{size:8, color:'#00CC66', symbol:'triangle-up'}, name:t('waypoints')},
+    {type:'scatter', mode:'markers',
+     x:[data.start_px[0]], y:[data.start_px[1]],
+     marker:{size:14, color:'#00CC00'}, name:t('start')},
+    {type:'scatter', mode:'markers',
+     x:[data.goal_px[0]], y:[data.goal_px[1]],
+     marker:{size:14, color:'#FF3333'}, name:t('goal')},
+  ];
+  const last = data.kt_trajectory[data.kt_trajectory.length-1];
+  // Sim End marker (trace index 6)
+  traces.push({type:'scatter', mode:'markers',
+    x:[last[0]], y:[last[1]],
+    marker:{size:12, color:'#0066FF', symbol:'diamond'}, name:t('sim_end')});
+  // Ship position marker for replay (trace index 7, initially hidden)
+  traces.push({type:'scatter', mode:'markers',
+    x:[data.start_px[0]], y:[data.start_px[1]],
+    marker:{size:16, color:'#FF9500', symbol:'circle', line:{color:'#fff',width:2}},
+    name:'Ship', visible:false});
+
+  const layout = {
+    xaxis:{range:[0,W], scaleanchor:'y', showgrid:false, zeroline:false, showticklabels:false},
+    yaxis:{range:[H,0], showgrid:false, zeroline:false, showticklabels:false},
+    margin:{t:10,b:10,l:10,r:10}, paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(0,0,0,0)',
+    legend:{x:0.01, y:0.99, bgcolor:'rgba(250,248,245,0.9)', font:{color:'#555'}},
+  };
+
+  const el = document.getElementById('plot-route');
+  // Get current view dimensions for proper sizing
+  const container = document.getElementById('vp-route');
+  const h = container.clientHeight > 100 ? container.clientHeight : 600;
+  Plotly.react(el, traces, {...layout, height: h}, {responsive:true});
+
+  // Map click handler — update start/goal coords
+  el.removeAllListeners && el.removeAllListeners('plotly_click');
+  el.on('plotly_click', function(evt) {
+    if (!evt || !evt.points || evt.points.length === 0) return;
+    const pt = evt.points[0];
+    const px = pt.x, py = pt.y;
+    if (px < 0 || px > W || py < 0 || py > H) return;
+    // Convert pixel → lon/lat using map bounds
+    const lon = data.map_tl[0] + (px / W) * (data.map_br[0] - data.map_tl[0]);
+    const lat = data.map_tl[1] - (py / H) * (data.map_tl[1] - data.map_br[1]);
+    if (window._clickMode === 'goal') {
+      setVal('goal_lon', lon.toFixed(6));
+      setVal('goal_lat', lat.toFixed(6));
+    } else {
+      setVal('start_lon', lon.toFixed(6));
+      setVal('start_lat', lat.toFixed(6));
+    }
+  });
+}
+
+// ══════════════════════════════════════════════════════════════
+// 7. PLOT: MOTION PARAMETERS
+// ══════════════════════════════════════════════════════════════
+function plotMotionParams(data) {
+  const t_data = data.time;
+  const maxRudder = parseFloat(document.getElementById('max_rudder_deg').value);
+
+  const traces = [
+    {x:t_data, y:data.rudder, type:'scatter', mode:'lines', line:{color:'#007aff',width:1.5}, name:t('rudder_deg'), xaxis:'x', yaxis:'y'},
+    {x:t_data, y:data.heading, type:'scatter', mode:'lines', line:{color:'#ff3b30',width:1.5}, name:t('heading_deg'), xaxis:'x2', yaxis:'y2'},
+    {x:t_data, y:data.heading_desired, type:'scatter', mode:'lines', line:{color:'#007aff',width:1,dash:'dash'}, name:t('desired_heading'), xaxis:'x2', yaxis:'y2'},
+    {x:t_data, y:data.speed_kn, type:'scatter', mode:'lines', line:{color:'#34c759',width:1.5}, name:t('speed_kn_label'), xaxis:'x3', yaxis:'y3'},
+    {x:t_data, y:data.drift_angle, type:'scatter', mode:'lines', line:{color:'#cc73e8',width:1}, name:t('drift_deg'), xaxis:'x4', yaxis:'y4'},
+  ];
+
+  const layout = {
+    margin:{t:50,b:50,l:60,r:20},
+    title:{text:t('motion_curves'), font:{color:'#1a1a1a',size:14}},
+    paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(0,0,0,0)',
+    font:{color:'#666'},
+    grid:{rows:2, columns:2, pattern:'independent'},
+    xaxis:{title:t('time')+' (s)', domain:[0,0.45], anchor:'y'},
+    yaxis:{title:t('rudder_deg'), domain:[0.55,1], anchor:'x'},
+    xaxis2:{title:t('time')+' (s)', domain:[0.55,1], anchor:'y2'},
+    yaxis2:{title:t('heading_deg'), domain:[0.55,1], anchor:'x2'},
+    xaxis3:{title:t('time')+' (s)', domain:[0,0.45], anchor:'y3'},
+    yaxis3:{title:t('speed_kn_label'), domain:[0,0.42], anchor:'x3'},
+    xaxis4:{title:t('time')+' (s)', domain:[0.55,1], anchor:'y4'},
+    yaxis4:{title:t('drift_deg'), domain:[0,0.42], anchor:'x4'},
+    shapes:[
+      {type:'line',xref:'x',yref:'y',x0:t_data[0],x1:t_data[t_data.length-1],y0:maxRudder,y1:maxRudder,line:{color:'red',dash:'dot',width:1}},
+      {type:'line',xref:'x',yref:'y',x0:t_data[0],x1:t_data[t_data.length-1],y0:-maxRudder,y1:-maxRudder,line:{color:'red',dash:'dot',width:1}},
+    ],
+    showlegend:false,
+  };
+
+  Plotly.react('plot-motion', traces, layout, {responsive:true});
+}
+
+// ══════════════════════════════════════════════════════════════
+// 8. PLOT: GRID MAP
+// ══════════════════════════════════════════════════════════════
+function plotGridMap(data) {
+  const W = data.grid_w, H = data.grid_h;
+  const traces = [
+    {type:'image', source:'data:image/png;base64,'+data.grid_image_b64,
+     x0:0, y0:0, dx:1, dy:1, sizex:W, sizey:H},
+    {type:'scatter', mode:'lines',
+     x:data.path_pixels.map(p=>p[0]), y:data.path_pixels.map(p=>p[1]),
+     line:{color:'#FFD700',width:2}, name:t('a_star_path')},
+    {type:'scatter', mode:'lines',
+     x:data.kt_trajectory.map(p=>p[0]), y:data.kt_trajectory.map(p=>p[1]),
+     line:{color:'#0066FF',width:2}, name:t('kt_trajectory')},
+    {type:'scatter', mode:'markers',
+     x:[data.start_px[0]], y:[data.start_px[1]],
+     marker:{size:12,color:'#00CC00'}, name:t('start')},
+    {type:'scatter', mode:'markers',
+     x:[data.goal_px[0]], y:[data.goal_px[1]],
+     marker:{size:12,color:'#FF3333'}, name:t('goal')},
+  ];
+
+  const layout = {
+    margin:{t:40,b:40,l:40,r:20},
+    title:{text:t('grid_title'), font:{color:'#1a1a1a',size:14}},
+    paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(0,0,0,0)',
+    font:{color:'#666'},
+    xaxis:{range:[0,W], scaleanchor:'y'},
+    yaxis:{range:[H,0]},
+    legend:{x:0.01,y:0.99,bgcolor:'rgba(250,248,245,0.9)',font:{color:'#555'}},
+  };
+
+  Plotly.react('plot-grid', traces, layout, {responsive:true});
+}
+
+// ══════════════════════════════════════════════════════════════
+// 9. RENDER SUMMARY
+// ══════════════════════════════════════════════════════════════
+function renderSummary(data) {
+  const m = data.metrics;
+  const cards = [
+    {icon:'~',label:t('route_distance'),value:m.path_length_km.toFixed(1),unit:t('path_km')},
+    {icon:'T',label:t('sim_time'),value:m.sim_time_s.toFixed(0),unit:t('path_s')},
+    {icon:'W',label:t('wp_reached'),value:m.wp_reached+'/'+m.wp_total,unit:''},
+    {icon:'E',label:t('endpoint_offset'),value:m.end_offset_m.toFixed(1),unit:t('path_m')},
+    {icon:'R',label:t('rudder_range'),value:'['+m.rudder_range[0].toFixed(1)+', '+m.rudder_range[1].toFixed(1)+']',unit:t('path_deg')},
+    {icon:'H',label:t('max_heading_err'),value:m.max_heading_error.toFixed(1),unit:t('path_deg')},
+  ];
+  document.getElementById('summary-cards').innerHTML =
+    `<div class="metrics-grid">` +
+    cards.map(c =>
+      `<div class="glass-card">
+        <div class="card-icon">${c.icon}</div>
+        <div class="card-label">${c.label}</div>
+        <div class="card-value">${c.value}<span class="card-unit">${c.unit}</span></div>
+      </div>`
+    ).join('') +
+    `</div>
+    <div class="glass-card ai-card">
+      <div class="ai-title">${currentLang === 'zh' ? 'AI 航行分析' : 'AI Navigation Analysis'}</div>
+      <div class="ai-chips" id="ai-chips"></div>
+      <div class="ai-report" id="ai-report" data-placeholder="${currentLang === 'zh' ? '选择上方分析类型开始' : 'Choose an analysis type above'}"></div>
+      <div class="ai-copy" onclick="copyAIReport()">${currentLang === 'zh' ? '点击此处复制全部报告' : 'Click to copy all reports'}</div>
+    </div>`;
+  // Render preset chips
+  renderAIChips();
+}
+
+const aiAnalysisTypes = [
+  {key:'comprehensive', zh:'综合航行分析', en:'Comprehensive Analysis', icon:'📋'},
+  {key:'route', zh:'航线规划评估', en:'Route Assessment', icon:'🗺'},
+  {key:'maneuver', zh:'操纵控制分析', en:'Maneuverability', icon:'⚙'},
+  {key:'environment', zh:'环境影响评估', en:'Environment Impact', icon:'🌊'},
+  {key:'risk', zh:'风险与优化建议', en:'Risks & Optimization', icon:'⚠'},
+];
+
+function renderAIChips() {
+  const container = document.getElementById('ai-chips');
+  if (!container) return;
+  container.innerHTML = aiAnalysisTypes.map(function(t) {
+    return '<button class="ai-chip" data-type="' + t.key + '" onclick="generateAIAnalysis(\'' + t.key + '\')">' +
+           t.icon + ' ' + (currentLang === 'zh' ? t.zh : t.en) + '</button>';
+  }).join('');
+}
+
+async function generateAIAnalysis(analysisType) {
+  const data = window._simData;
+  if (!data) return;
+
+  // Find chip button and set loading
+  const chip = document.querySelector('.ai-chip[data-type="' + analysisType + '"]');
+  if (chip) { chip.disabled = true; chip.textContent += ' …'; }
+
+  const report = document.getElementById('ai-report');
+  // Clear placeholder on first run
+  if (report.dataset.placeholder && !report.dataset.used) {
+    report.textContent = '';
+    report.dataset.used = '1';
+  }
+
+  // Show loading indicator
+  const typeInfo = aiAnalysisTypes.find(function(t) { return t.key === analysisType; });
+  const loadingLabel = currentLang === 'zh' ? '生成中...' : 'Generating...';
+  const loadingDiv = document.createElement('div');
+  loadingDiv.className = 'ai-msg loading';
+  loadingDiv.textContent = '⌛ ' + loadingLabel;
+  loadingDiv.id = 'ai-loading';
+  report.appendChild(loadingDiv);
+  report.scrollTop = report.scrollHeight;
+
+  try {
+    const resp = await fetch('/api/analyze', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        analysis_type: analysisType,
+        metrics: data.metrics,
+        parameters: window._lastParams || getParams(),
+      }),
+    });
+    const result = await resp.json();
+
+    // Remove loading indicator
+    const loadEl = document.getElementById('ai-loading');
+    if (loadEl) loadEl.remove();
+
+    // Add response as a chat message
+    const msgDiv = document.createElement('div');
+    msgDiv.className = 'ai-msg';
+    const label = currentLang === 'zh' ? typeInfo.zh : typeInfo.en;
+    if (result.status === 'ok') {
+      msgDiv.innerHTML = '<div class="ai-msg-label">' + typeInfo.icon + ' ' + label + '</div>' +
+                         '<div class="ai-msg-body">' + result.report + '</div>';
+    } else {
+      msgDiv.innerHTML = '<div class="ai-msg-label">❌ ' + label + '</div>' +
+                         '<div class="ai-msg-body" style="color:var(--danger)">' +
+                         (currentLang === 'zh' ? '生成失败: ' : 'Failed: ') + result.message + '</div>';
+    }
+    report.appendChild(msgDiv);
+    report.scrollTop = report.scrollHeight;
+
+  } catch (err) {
+    const loadEl = document.getElementById('ai-loading');
+    if (loadEl) loadEl.remove();
+    const msgDiv = document.createElement('div');
+    msgDiv.className = 'ai-msg';
+    msgDiv.innerHTML = '<div class="ai-msg-label">❌</div>' +
+                       '<div class="ai-msg-body" style="color:var(--danger)">' +
+                       (currentLang === 'zh' ? '网络错误: ' : 'Network error: ') + err.message + '</div>';
+    report.appendChild(msgDiv);
+  } finally {
+    if (chip) { chip.disabled = false; chip.textContent = typeInfo.icon + ' ' + (currentLang === 'zh' ? typeInfo.zh : typeInfo.en); }
+  }
+}
+
+function copyAIReport() {
+  const report = document.getElementById('ai-report');
+  if (!report) return;
+  // Collect all messages
+  const texts = [];
+  report.querySelectorAll('.ai-msg-body').forEach(function(body) {
+    texts.push(body.textContent);
+  });
+  if (texts.length === 0) return;
+  navigator.clipboard.writeText(texts.join('\n\n---\n\n')).then(function() {
+    report.style.outline = '2px solid var(--primary)';
+    setTimeout(function() { report.style.outline = ''; }, 600);
+  });
+}
+
+// ══════════════════════════════════════════════════════════════
+// 10. BOTTOM PANEL RENDERING
+// ══════════════════════════════════════════════════════════════
+function renderBottomPanel(data) {
+  const tabBar = document.getElementById('bottom-tab-bar');
+  const content = document.getElementById('bottom-content');
+
+  // Save replay state before clearing DOM
+  const wasPlaying = replayPlaying;
+  const savedIdx = replayIdx;
+  if (replayPlaying) replayPause();
+
+  // Determine which views go to bottom
+  const bottomKeys = allViewKeys.filter(k => k !== mainViewKey);
+  // Always include replay
+  const allBottomKeys = [...bottomKeys, 'replay'];
+
+  // Render bottom tab buttons
+  tabBar.innerHTML = allBottomKeys.map(k => {
+    const isReplay = k === 'replay';
+    return `<button class="bottom-tab-btn ${k === bottomKeys[0] ? 'active' : ''}"
+                    data-view="${k}" onclick="swapWithMain('${k}')">
+              ${t(isReplay ? 'trajectory_replay' : k === 'route' ? 'route_overview' : k === 'motion' ? 'motion_curves' : k === 'grid' ? 'grid_map' : 'data_summary')}
+              ${isReplay ? '' : '<span class="expand-icon">⤢</span>'}
+            </button>`;
+  }).join('');
+
+  // Render bottom mini cards
+  content.innerHTML = bottomKeys.map(k => {
+    if (k === 'summary') {
+      const m = data.metrics;
+      return `<div class="mini-card" onclick="swapWithMain('summary')">
+        <div class="mini-title">${t('data_summary')} <button class="expand-btn" onclick="event.stopPropagation();swapWithMain('summary')">⤢</button></div>
+        <div class="mini-metrics">
+          <div class="mini-metric"><div class="mm-val">${m.path_length_km.toFixed(1)}</div><div class="mm-label">${t('path_km')}</div></div>
+          <div class="mini-metric"><div class="mm-val">${m.sim_time_s.toFixed(0)}</div><div class="mm-label">${t('path_s')}</div></div>
+          <div class="mini-metric"><div class="mm-val">${m.wp_reached}/${m.wp_total}</div><div class="mm-label">WP</div></div>
+          <div class="mini-metric"><div class="mm-val">${m.end_offset_m.toFixed(0)}</div><div class="mm-label">${t('path_m')}</div></div>
+        </div>
+      </div>`;
+    } else if (k === 'route') {
+      return `<div class="mini-card" onclick="swapWithMain('route')">
+        <div class="mini-title">${t('route_overview')} <button class="expand-btn">⤢</button></div>
+        <div class="mini-plot" id="mini-route" style="width:100%;height:100%"></div>
+      </div>`;
+    } else if (k === 'motion') {
+      return `<div class="mini-card" onclick="swapWithMain('motion')">
+        <div class="mini-title">${t('motion_curves')} <button class="expand-btn">⤢</button></div>
+        <div class="mini-plot" id="mini-motion" style="width:100%;height:100%"></div>
+      </div>`;
+    } else if (k === 'grid') {
+      return `<div class="mini-card" onclick="swapWithMain('grid')">
+        <div class="mini-title">${t('grid_map')} <button class="expand-btn">⤢</button></div>
+        <div class="mini-plot" id="mini-grid" style="width:100%;height:100%"></div>
+      </div>`;
+    }
+    return '';
+  }).join('');
+
+  // Render little plotly charts in mini cards (delayed for DOM ready)
+  setTimeout(() => {
+    bottomKeys.forEach(k => {
+      if (k === 'route' && document.getElementById('mini-route')) {
+        renderMiniRoute(data);
+      } else if (k === 'motion' && document.getElementById('mini-motion')) {
+        renderMiniMotion(data);
+      } else if (k === 'grid' && document.getElementById('mini-grid')) {
+        renderMiniGrid(data);
+      }
+    });
+  }, 100);
+
+  // Render replay panel
+  renderReplayPanel(data);
+
+  // Restore replay state if was active before tab switch
+  if (wasPlaying) {
+    replayIdx = savedIdx;
+    // Re-show ship marker at saved position
+    moveShipOnMap(data, replayIdx);
+    Plotly.restyle('plot-route', {visible: true}, [7]);
+    // Restart playback
+    replayPlaying = true;
+    document.getElementById('replay-play-btn').textContent = '⏸';
+    replayTick();
+  } else if (savedIdx > 0) {
+    // Was paused at a position — restore marker
+    replayIdx = savedIdx;
+    moveShipOnMap(data, replayIdx);
+    Plotly.restyle('plot-route', {visible: true}, [7]);
+  }
+}
+
+function renderMiniRoute(data) {
+  const W = data.grid_w, H = data.grid_h;
+  Plotly.react('mini-route', [
+    {type:'image', source:'data:image/png;base64,'+data.map_image_b64,
+     x0:0,y0:0,dx:1,dy:1,sizex:W,sizey:H, hoverinfo:'none'},
+    {type:'scatter',mode:'lines',x:data.kt_trajectory.map(p=>p[0]),y:data.kt_trajectory.map(p=>p[1]),
+     line:{color:'#0066FF',width:2}},
+  ], {
+    margin:{t:0,b:0,l:0,r:0},
+    xaxis:{range:[0,W],showgrid:false,zeroline:false,showticklabels:false},
+    yaxis:{range:[H,0],showgrid:false,zeroline:false,showticklabels:false},
+    paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(0,0,0,0)',
+    showlegend:false,
+  }, {responsive:true});
+}
+
+function renderMiniMotion(data) {
+  Plotly.react('mini-motion', [
+    {y:data.rudder, type:'scatter',mode:'lines',line:{color:'#007aff',width:1}},
+    {y:data.speed_kn, type:'scatter',mode:'lines',line:{color:'#34c759',width:1}},
+  ], {
+    margin:{t:0,b:20,l:30,r:10},
+    paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(0,0,0,0)',
+    showlegend:false,
+  }, {responsive:true});
+}
+
+function renderMiniGrid(data) {
+  Plotly.react('mini-grid', [
+    {type:'image', source:'data:image/png;base64,'+data.grid_image_b64,
+     x0:0,y0:0,dx:1,dy:1,sizex:data.grid_w,sizey:data.grid_h},
+    {type:'scatter',mode:'lines',x:data.kt_trajectory.map(p=>p[0]),y:data.kt_trajectory.map(p=>p[1]),
+     line:{color:'#0066FF',width:2}},
+  ], {
+    margin:{t:0,b:0,l:0,r:0},
+    xaxis:{range:[0,data.grid_w],showgrid:false,zeroline:false,showticklabels:false},
+    yaxis:{range:[data.grid_h,0],showgrid:false,zeroline:false,showticklabels:false},
+    paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(0,0,0,0)',
+    showlegend:false,
+  }, {responsive:true});
+}
+
+// ══════════════════════════════════════════════════════════════
+// 11. TRAJECTORY REPLAY
+// ══════════════════════════════════════════════════════════════
+let replayTimer = null, replayIdx = 0, replayPlaying = false, replaySpeed = 2;
+
+function renderReplayPanel(data) {
+  const container = document.getElementById('bottom-content');
+  const replayDiv = document.createElement('div');
+  replayDiv.className = 'mini-card';
+  replayDiv.style.cssText = 'flex:1.5;min-width:300px';
+  replayDiv.innerHTML = `
+    <div class="mini-title">${t('trajectory_replay')}</div>
+    <div class="mini-metrics" id="replay-metrics">
+      <div class="mini-metric"><div class="mm-val" id="rep-speed">--</div><div class="mm-label">${t('speed_kn_label')}</div></div>
+      <div class="mini-metric"><div class="mm-val" id="rep-heading">--</div><div class="mm-label">${t('heading_deg')}</div></div>
+      <div class="mini-metric"><div class="mm-val" id="rep-rudder">--</div><div class="mm-label">${t('rudder_deg')}</div></div>
+    </div>
+    <div class="replay-controls">
+      <button class="replay-btn" onclick="replaySkip(-50)">⏮</button>
+      <button class="replay-btn" onclick="replayStep(-1)">◀</button>
+      <button class="replay-btn" id="replay-play-btn" onclick="replayToggle()">▶</button>
+      <button class="replay-btn" onclick="replayStep(1)">▶</button>
+      <button class="replay-btn" onclick="replaySkip(50)">⏭</button>
+      <input type="range" class="replay-slider" id="replay-slider" min="0" max="100" value="0" oninput="replaySeek(this.value)">
+      <span class="replay-time" id="replay-time">--</span>
+    </div>
+  `;
+  container.appendChild(replayDiv);
+
+  // Add ship marker to main route plot
+  if (data.kt_trajectory && data.kt_trajectory.length > 1) {
+    window._replayData = data;
+    updateReplaySlider();
+  }
+}
+
+function replayToggle() {
+  if (replayPlaying) { replayPause(); return; }
+  replayPlaying = true;
+  document.getElementById('replay-play-btn').textContent = '⏸';
+  // Show ship marker on main map
+  Plotly.restyle('plot-route', {visible: true}, [7]);
+  replayTick();
+}
+
+function replayPause() {
+  replayPlaying = false;
+  document.getElementById('replay-play-btn').textContent = '▶';
+  if (replayTimer) { clearTimeout(replayTimer); replayTimer = null; }
+}
+
+function moveShipOnMap(data, idx) {
+  const traj = data.kt_trajectory;
+  const n = traj.length;
+  const i = Math.max(0, Math.min(idx, n - 1));
+  // Update ship marker (trace 7) position
+  Plotly.restyle('plot-route', {x: [[traj[i][0]]], y: [[traj[i][1]]]}, [7]);
+  // Update sim end marker (trace 6) back to original position
+  Plotly.restyle('plot-route', {x: [[traj[n-1][0]]], y: [[traj[n-1][1]]]}, [6]);
+}
+
+function replayTick() {
+  if (!replayPlaying || !window._replayData) return;
+  const data = window._replayData;
+  const n = data.kt_trajectory.length;
+  if (n < 2) return;
+
+  replayIdx = Math.min(replayIdx, n - 1);
+  updateReplayUI(data, replayIdx);
+  moveShipOnMap(data, replayIdx);
+
+  replayIdx += replaySpeed;
+  if (replayIdx >= n) { replayIdx = n - 1; moveShipOnMap(data, replayIdx); replayPause(); return; }
+
+  const interval = 50;
+  document.getElementById('replay-slider').value = (replayIdx / n * 100).toFixed(0);
+  replayTimer = setTimeout(replayTick, interval);
+}
+
+function replaySeek(val) {
+  const data = window._replayData;
+  if (!data) return;
+  replayIdx = Math.floor(val / 100 * data.kt_trajectory.length);
+  updateReplayUI(data, replayIdx);
+  moveShipOnMap(data, replayIdx);
+  // Show ship marker if seeking while paused
+  if (!replayPlaying) Plotly.restyle('plot-route', {visible: true}, [7]);
+}
+
+function replaySkip(n) {
+  const data = window._replayData;
+  if (!data) return;
+  replayIdx = Math.max(0, Math.min(data.kt_trajectory.length-1, replayIdx + n));
+  updateReplayUI(data, replayIdx);
+  moveShipOnMap(data, replayIdx);
+  if (!replayPlaying) Plotly.restyle('plot-route', {visible: true}, [7]);
+}
+
+function replayStep(n) {
+  replaySkip(n);
+}
+
+function updateReplayUI(data, idx) {
+  if (idx < data.time.length) {
+    document.getElementById('rep-speed').textContent = (data.speed_kn[idx] || 0).toFixed(1);
+    document.getElementById('rep-heading').textContent = (data.heading[idx] || 0).toFixed(1);
+    document.getElementById('rep-rudder').textContent = (data.rudder[idx] || 0).toFixed(1);
+    document.getElementById('replay-time').textContent = (data.time[idx] || 0).toFixed(0) + ' s';
+  }
+  document.getElementById('replay-slider').value = (idx / data.kt_trajectory.length * 100).toFixed(0);
+}
+
+function updateReplaySlider() {
+  document.getElementById('replay-slider').max = 100;
+  document.getElementById('replay-slider').value = 0;
+}
+
+// ══════════════════════════════════════════════════════════════
+// 12. MAP CLICK MODE
+// ══════════════════════════════════════════════════════════════
+window._clickMode = 'start';
+function setClickMode(mode) {
+  window._clickMode = mode;
+  document.getElementById('cm-start').classList.toggle('active', mode === 'start');
+  document.getElementById('cm-goal').classList.toggle('active', mode === 'goal');
+}
+
+function swapStartGoal() {
+  const slon = document.getElementById('start_lon').value;
+  const slat = document.getElementById('start_lat').value;
+  setVal('start_lon', document.getElementById('goal_lon').value);
+  setVal('start_lat', document.getElementById('goal_lat').value);
+  setVal('goal_lon', slon);
+  setVal('goal_lat', slat);
+}
+
+// ══════════════════════════════════════════════════════════════
+// 13. BOTTOM PANEL RESIZE
+// ══════════════════════════════════════════════════════════════
+(function initResize() {
+  const handle = document.getElementById('resize-handle');
+  const bottom = document.getElementById('bottom-panel');
+  let dragging = false, startY = 0, startH = 0;
+
+  handle.addEventListener('mousedown', function(e) {
+    dragging = true;
+    startY = e.clientY;
+    startH = bottom.offsetHeight;
+    handle.classList.add('active');
+    document.body.style.cursor = 'ns-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', function(e) {
+    if (!dragging) return;
+    const newH = startH + (startY - e.clientY);
+    const clamped = Math.max(160, Math.min(450, newH));
+    document.documentElement.style.setProperty('--bottom-h', clamped + 'px');
+  });
+
+  document.addEventListener('mouseup', function() {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove('active');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    setTimeout(() => window.dispatchEvent(new Event('resize')), 100);
+  });
+})();
+
+// ══════════════════════════════════════════════════════════════
+// 14. CUSTOM SELECT DROPDOWN
+// ══════════════════════════════════════════════════════════════
+function initCustomSelects() {
+  document.querySelectorAll('.sidebar select').forEach(function(native) {
+    if (native.parentElement.classList.contains('custom-select-wrap')) return; // already done
+
+    // Wrap native select
+    const wrap = document.createElement('div');
+    wrap.className = 'custom-select-wrap';
+    native.parentElement.insertBefore(wrap, native);
+    wrap.appendChild(native);
+
+    // Create trigger (visible button)
+    const trigger = document.createElement('div');
+    trigger.className = 'custom-select-trigger';
+    trigger.textContent = native.options[native.selectedIndex].text;
+    wrap.appendChild(trigger);
+
+    // Create dropdown popup
+    const dropdown = document.createElement('div');
+    dropdown.className = 'custom-select-dropdown';
+    Array.from(native.options).forEach(function(opt, i) {
+      const item = document.createElement('div');
+      item.className = 'custom-select-option';
+      if (opt.selected) item.classList.add('selected');
+      item.textContent = opt.text;
+      item.addEventListener('mousedown', function(e) {
+        e.preventDefault();
+        native.value = opt.value;
+        trigger.textContent = opt.text;
+        // Update selected class
+        dropdown.querySelectorAll('.custom-select-option').forEach(function(o) { o.classList.remove('selected'); });
+        item.classList.add('selected');
+        // Fire change event on native select
+        native.dispatchEvent(new Event('change', {bubbles: true}));
+        closeDropdown(dropdown);
+      });
+      dropdown.appendChild(item);
+    });
+    wrap.appendChild(dropdown);
+
+    // Toggle dropdown on trigger click
+    trigger.addEventListener('click', function(e) {
+      e.stopPropagation();
+      const isOpen = dropdown.classList.contains('open');
+      closeAllDropdowns();
+      if (!isOpen) {
+        dropdown.classList.add('open');
+        // Scroll selected into view
+        const sel = dropdown.querySelector('.custom-select-option.selected');
+        if (sel) sel.scrollIntoView({block:'nearest'});
+      }
+    });
+
+    // Sync trigger text when native value changes programmatically
+    native.addEventListener('change', function() {
+      trigger.textContent = native.options[native.selectedIndex].text;
+      dropdown.querySelectorAll('.custom-select-option').forEach(function(o, i) {
+        o.classList.toggle('selected', i === native.selectedIndex);
+      });
+    });
+  });
+}
+
+function closeDropdown(dd) { dd.classList.remove('open'); }
+function closeAllDropdowns() {
+  document.querySelectorAll('.custom-select-dropdown.open').forEach(function(d) { d.classList.remove('open'); });
+}
+document.addEventListener('click', closeAllDropdowns);
+
+// ══════════════════════════════════════════════════════════════
+// 15. INIT
+// ══════════════════════════════════════════════════════════════
+setStatus('ready');
+applyI18n();
+applyShipPreset();
+applyEnvPreset();
+applyPidPreset();
+initCustomSelects();
+
+// Handle window resize for Plotly charts
+window.addEventListener('resize', function() {
+  if (window._simData) {
+    const container = document.getElementById('vp-route');
+    const h = container && container.clientHeight > 100 ? container.clientHeight : 600;
+    Plotly.relayout('plot-route', {height: h});
+  }
+});
+
+console.log('[INIT] Marine Route Planning v2.0 — Plotly ' + Plotly.version);
+</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+map_cache.png
+map_meta.json
+build_temp/
+build/
+dist/
+*.exe
+take_screenshots.py
