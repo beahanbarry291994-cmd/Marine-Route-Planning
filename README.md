@@ -22,6 +22,7 @@ A complete pipeline for autonomous ship route planning: from satellite chart acq
 <details>
 <summary>Expand</summary>
 
+- [Web GUI Dashboard](#web-gui-dashboard)
 - [Overview](#overview)
 - [System Architecture](#system-architecture)
 - [Algorithm Details](#algorithm-details)
@@ -52,6 +53,42 @@ This project addresses the problem of **autonomous ship route planning** in comp
 4. Simulates the actual ship motion along the trajectory using the **KT (Nomoto) maneuvering model**, complete with PID heading control and environmental disturbances (wind + current)
 
 The system is validated on a real-world route: **Taohua Island to Putuo Mountain** (Zhoushan Archipelago, China), a ~15 km route through island-dense waters.
+
+> **New in v2.0:** Interactive Web GUI with satellite basemap, Nautical Light UI theme, DeepSeek AI navigation analysis, and one-click .exe packaging. See the `v2.0-navigator` branch or download `MarineRoutePlanning.exe`.
+
+---
+
+## Web GUI Dashboard
+
+The interactive Flask + Plotly web interface provides a complete visual cockpit for route planning and simulation analysis.
+
+### Route Overview
+<img src="screenshot_overview.png" width="95%" alt="Route Overview">
+
+*Satellite basemap with A* global path (gold dash), KT trajectory (blue), waypoints (green triangles), and click-to-pick coordinate selection.*
+
+### Motion Curves
+<img src="screenshot_motion.png" width="95%" alt="Motion Curves">
+
+*Four-quadrant real-time curves: rudder angle with saturation limits (red dash), heading tracking vs desired, speed profile, and drift angle.*
+
+### Grid Map
+<img src="screenshot_grid.png" width="95%" alt="Grid Map">
+
+*Binary occupancy grid (white = navigable water, black = land + safety margin) overlaid with planned path and simulated trajectory.*
+
+### Data Summary & AI Analysis
+<img src="screenshot_summary.png" width="95%" alt="Data Summary">
+
+*Key simulation metrics (distance, time, waypoints, offset, rudder range, heading error) plus DeepSeek-powered AI navigation analysis with 5 preset analysis types.*
+
+**Web GUI Features:**
+- Ship presets (bulk/tanker/container/passenger/tug) with automatic K/T/a/speed defaults
+- Environment presets (calm/light/moderate/heavy) with wind/current/wave parameters
+- PID controller presets (conservative/balanced/aggressive)
+- Trajectory replay with playback controls and real-time metrics
+- i18n support (Chinese / English) with one-click toggle
+- JSON report export
 
 ---
 
@@ -219,17 +256,31 @@ $$u_{eff} = u + V_c \cos(\psi_c - \psi), \quad v_{eff} = v + V_c \sin(\psi_c - \
 
 ## Quick Start
 
-### Prerequisites
+### Web GUI (recommended)
 
 ```bash
-pip install numpy opencv-python matplotlib scipy
+# Checkout the v2.0 Web GUI branch
+git clone https://github.com/beahanbarry291994-cmd/Marine-Route-Planning.git
+cd Marine-Route-Planning
+git checkout v2.0-navigator
+cd flask_gui
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Launch
+python app.py
+# Open http://localhost:5000
 ```
 
-### Run
+Or download `MarineRoutePlanning.exe` from the releases — double-click to launch, browser opens automatically.
+
+### CLI / Script (master branch)
 
 ```bash
 git clone https://github.com/beahanbarry291994-cmd/Marine-Route-Planning.git
 cd Marine-Route-Planning
+pip install numpy opencv-python matplotlib scipy
 python main.py
 ```
 
@@ -289,6 +340,9 @@ The simulation uses **Mariner-class** vessel parameters:
 - [x] KT (Nomoto) ship motion model simulation
 - [x] PID heading control for waypoint following
 - [x] Wind and current disturbance modeling
+- [x] Interactive Web GUI with satellite basemap and Plotly.js
+- [x] DeepSeek AI navigation analysis (5 analysis types)
+- [x] One-click .exe packaging (PyInstaller)
 - [ ] MMG model integration for higher-fidelity dynamics
 - [ ] COLREGS-compliant collision avoidance
 - [ ] Multi-objective optimization (distance, safety, fuel)
