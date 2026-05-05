@@ -7,6 +7,8 @@ a = Analysis(
     datas=[
         ('templates', 'templates'),
         ('static', 'static'),
+        ('map_cache.png', '.'),
+        ('map_meta.json', '.'),
     ],
     hiddenimports=[
         'engine',
