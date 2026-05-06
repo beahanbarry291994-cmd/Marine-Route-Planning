@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 *.pyo
+*.egg-info/
 map_cache.png
 map_meta.json
 build_temp/
@@ -8,3 +9,10 @@ build/
 dist/
 *.exe
 take_screenshots.py
+
+# 敏感文件 — 绝对不能提交
+.env
+*.env
+credentials.*
+*secret*
+*api_key*

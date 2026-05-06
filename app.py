@@ -8,6 +8,25 @@ import os
 # 确保 engine.py 可以被导入
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# 加载 .env 文件（不依赖 python-dotenv）
+def _load_dotenv(path=None):
+    """读取 .env 文件并注入到 os.environ，不覆盖已有环境变量"""
+    if path is None:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
+    if not os.path.exists(path):
+        return
+    with open(path, 'r', encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#') or '=' not in line:
+                continue
+            key, _, val = line.partition('=')
+            key, val = key.strip(), val.strip()
+            if key and key not in os.environ:
+                os.environ[key] = val
+
+_load_dotenv()
+
 import time
 import json
 import urllib.request
@@ -25,8 +44,8 @@ app = Flask(__name__,
     template_folder=os.path.join(BASE_DIR, 'templates'),
     static_folder=os.path.join(BASE_DIR, 'static'))
 
-# DeepSeek API 配置
-DEEPSEEK_API_KEY = 'sk-e8ecb64e94494ac19929b66982e9813b'
+# DeepSeek API 配置 — Key 从环境变量读取，不要硬编码在代码里
+DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY', '')
 DEEPSEEK_API_URL = 'https://api.deepseek.com/chat/completions'
 DEEPSEEK_MODEL = 'deepseek-v4-flash'
 
